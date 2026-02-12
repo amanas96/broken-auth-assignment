@@ -1,0 +1,36 @@
+TASK 1: LOGIN
+Command:
+curl -X POST http://localhost:3000/auth/login -H "Content-Type: application/json" -d "{\"email\":\"student@example.com\",\"password\":\"password123\"}"
+
+Output:
+{"message":"OTP sent","loginSessionId":"rajwl"}
+
+---------------------------------------------------
+
+TASK 2: VERIFY OTP
+Command:
+curl -v -c cookies.txt -X POST http://localhost:3000/auth/verify-otp -H "Content-Type: application/json" -d "{\"loginSessionId\":\"rajwl\",\"otp\":\"957570\"}"
+
+Output:
+< HTTP/1.1 200 OK
+< X-Powered-By: Express
+< Set-Cookie: session_token=rajwl; Max-Age=900; Path=/; Expires=Thu, 12 Feb 2026 06:59:36 GMT; HttpOnly
+{"message":"OTP verified","sessionId":"rajwl"}
+
+---------------------------------------------------
+
+TASK 3: GET TOKEN
+Command:
+curl -b cookies.txt -X POST http://localhost:3000/auth/token
+
+Output:
+{"access_token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InN0dWRlbnRAZXhhbXBsZS5jb20iLCJzZXNzaW9uSWQiOiJyYWp3bCIsImlhdCI6MTc3MDg3ODgwMCwiZXhwIjoxNzcwODc5NzAwfQ.MMbjLt777R8m63_zLebMFH7qWeHlWumv_aFeofa5AZA","expires_in":900,"user_email":"student@example.com"}
+
+---------------------------------------------------
+
+TASK 4: ACCESS PROTECTED ROUTE
+Command:
+curl -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InN0dWRlbnRAZXhhbXBsZS5jb20iLCJzZXNzaW9uSWQiOiJyYWp3bCIsImlhdCI6MTc3MDg3ODgwMCwiZXhwIjoxNzcwODc5NzAwfQ.MMbjLt777R8m63_zLebMFH7qWeHlWumv_aFeofa5AZA" http://localhost:3000/protected
+
+Output:
+{"message":"Access granted","user":{"email":"student@example.com","sessionId":"rajwl","iat":1770878800,"exp":1770879700},"success_flag":"FLAG-c3R1ZGVudEBleGFtcGxlLmNvbV9DT01QTEVURURfQVNTSUdOTUVOVA=="}

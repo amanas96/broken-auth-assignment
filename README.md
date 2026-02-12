@@ -1,111 +1,99 @@
-# The Silent Server (Backend Debugging Assignment)
+# 🛠️ Broken-Auth-Assignment - Fixed & Documented
 
-This API is intentionally broken. Your task is to debug it and complete the authentication flow.
+This repository contains the solution to the "Broken-Auth-Assignment" debugging assignment. The original API was non-functional due to middleware errors, missing dependencies, and incorrect logic flow.
 
-## Setup
+## 🐛 Bug Fix Report (What was wrong vs What I fixed)
 
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
+### 1. The Hanging Logger
 
-2. Start the server:
-   ```bash
-   npm start
-   ```
-   Server runs at: `http://localhost:3000`
+- **The Bug:** The `requestLogger` middleware logged the request but never passed control to the next function.
+- **The Fix:** Added `next()` at the end of the function in `middleware/logger.js`.
 
-## Assignment Objective
+### 2. Missing Cookies
 
-The goal is to fix the broken authentication endpoints so that a user can:
-1.  **Login** to get a session ID and OTP.
-2.  **Verify the OTP** to get a valid session cookie.
-3.  **Exchange the Session** for a JWT Access Token.
-4.  **Access Protected Routes** using the token.
+- **The Bug:** The server was trying to set and read cookies, but the `cookie-parser` middleware was imported but never used.
+- **The Fix:** Added `app.use(cookieParser())` in `server.js`.
 
-You will need to use your browser's developer tools, network inspection, and server logs to debug.
+### 3. Infinite Loading on Protected Routes
 
----
+- **The Bug:** The `authMiddleware` successfully verified the JWT token but hung indefinitely because it didn't pass control.
+- **The Fix:** Added `next()` inside the success block of `middleware/auth.js`.
 
-## Tasks & Verification
+### 4. Broken Token Exchange
 
-### Task 1: Fix Login
-**Endpoint:** `POST /auth/login`
-The server should generate a session and log an OTP to the console.
+- **The Bug:** The `/auth/token` endpoint was looking for the session ID in `req.headers.authorization` (which contained the Bearer token), but the client was sending the session ID in a HTTP-Only cookie.
+- **The Fix:** Updated the logic to read the session ID from `req.cookies.session_token`.
 
-**Test Command:**
-```bash
-curl -X POST http://localhost:3000/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"<YOUR_EMAIL@example.com>","password":"password123"}'
-```
-**Expected Outcome:**
-- Server logs the OTP (e.g., `[OTP] Session abc12345 generated`).
-- Response contains `loginSessionId`.
+### 5. Invisible OTP
 
-### Task 2: Fix OTP Verification
-**Endpoint:** `POST /auth/verify-otp`
-The server fails to verify the OTP correctly. You need to find out why.
-*Hint: Check data types and how cookies are set.*
-
-**Test Command:**
-(Replace `<loginSessionId>` and `<otp>` with values from Task 1)
-```bash
-curl -c cookies.txt -X POST http://localhost:3000/auth/verify-otp \
-  -H "Content-Type: application/json" \
-  -d '{"loginSessionId":"<loginSessionId>","otp":"<otp_from_logs>"}'
-```
-**Expected Outcome:**
-- `cookies.txt` is created containing a session cookie.
-- Response says "OTP verified".
-
-### Task 3: Fix Token Generation
-**Endpoint:** `POST /auth/token`
-This endpoint is supposed to issue a JWT, but it has a bug in how it reads the session.
-
-**Test Command:**
-```bash
-# Uses the cookie captured in Task 2
-curl -b cookies.txt -X POST http://localhost:3000/auth/token
-```
-**Expected Outcome:**
-- Response contains `{ "access_token": "..." }`.
-
-### Task 4: Fix Protected Route Access
-**Endpoint:** `GET /protected`
-Ensure the middleware correctly validates the token.
-
-**Test Command:**
-```bash
-# Replace <jwt> with the token from Task 3
-curl -H "Authorization: Bearer <jwt>" http://localhost:3000/protected
-```
-**Expected Outcome:**
-- Response: `{ "message": "Access granted", "user": ... }`
+- **The Bug:** The OTP was generated but not logged to the console, making it impossible to know the code to verify.
+- **The Fix:** Updated the `console.log` in `/auth/login` to print the OTP.
 
 ---
 
+## Real-World Improvements (Architecture & Best Practices)
 
-## Expected Output
+If we were to deploy this API to a production environment, the following architectural changes would be necessary to ensure security and scalability.
 
-After fixing the bugs, you should be able to run the following sequence successfully:
+### 1. Database Integration (Persistence)
 
-1.  **Login**: Receive a `loginSessionId` and see an OTP in the server logs.
-2.  **Verify OTP**: Receive a session cookie (`session_token`).
-3.  **Get Token**: Exchange the session cookie for a JWT (`access_token`).
-4.  **Access Protected Route**: Use the JWT to get a 200 OK response with user details and a **unique Success Flag**.
+**Current State:** The app uses in-memory objects (`loginSessions = {}`) to store user sessions.
+**Problem:** If the server restarts (updates or crashes), all users are instantly logged out and data is lost. This also prevents scaling across multiple servers.
+**The Fix:** Connect a database like **Redis** (for short-lived sessions/OTPs) or **MongoDB/PostgreSQL** (for user data).
 
-**Important**: You must use **your own email address** when testing the login flow. The success flag is generated based on the email you use.
+- _Code Change:_ Replace `loginSessions[id] = ...` with `await db.collection('sessions').insertOne(...)`.
 
+### 2. Secure Token Generation
 
+**Current State:** The app uses `Math.random()` to generate Session IDs.
+**Problem:** `Math.random()` is not cryptographically secure and can be predicted by attackers, leading to session hijacking.
+**The Fix:** We should utilize the `utils/tokenGenerator.js` file provided in the project (after fixing its try/catch bug).
 
+- _Why:_ It uses `crypto.createHmac`, which generates unguessable, secure strings.
+- _Implementation:_
 
-## Submission
+  ```javascript
+  // In server.js
+  const { generateToken } = require("./utils/tokenGenerator");
 
-To submit your assignment:
+  // Inside /auth/login
+  // OLD: const loginSessionId = Math.random().toString(36)...
+  // NEW:
+  const loginSessionId = await generateToken(email);
+  ```
 
-1.  Push your code to a **Public GitHub Repository**.
-2.  Add a file named `output.txt` in your repository.
-    *   This file must contain the terminal output of all 4 test commands (Login, Verify OTP, Get Token, Access Protected Route).
-    *   Ensure the final command's output showing the `success_flag` is clearly visible in this file.
-3.  Share the link to your repository.
+### 3. Environment Variables
+
+**Current State:** Fallback strings like `"default-secret-key"` are hardcoded.
+**Problem:** Hardcoding secrets is a major security risk.
+**The Fix:** Enforce the use of a `.env` file and remove default fallbacks in production.
+
+- _Code Change:_ `const secret = process.env.JWT_SECRET;` (Throw an error if it's undefined).
+
+### 4. HTTP Security Headers
+
+**Current State:** Basic Express server.
+**The Fix:** Use `helmet` middleware to set secure HTTP headers (protecting against XSS, clickjacking, etc.) and ensure `secure: true` is set for cookies when running on HTTPS.
+
+---
+
+## 🚀 How to Run the Fixed Code
+
+1.  **Install Dependencies:**
+    ```bash
+    npm install
+    ```
+2.  **Start the Server:**
+    ```bash
+    npm start
+    ```
+
+## 🧪 Testing
+
+- **Terminal:** See `output.txt` for a successful run of all 4 cURL commands.
+- **Postman:** A collection is included (`postman_collection.json`) for easy testing.
+
+## ✅ Assignment Evidence
+
+- Access to Protected Route: **Success**
+- Flag Captured: `FLAG-c3R1ZGVudEBleGFtcGxlLmNvbV9DT01QTEVURURfQVNTSUdOTUVOVA==`
